@@ -42,11 +42,60 @@ team_t team = {
 
 #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
 
+// >> Basic constants and macros
+#define WSIZE 4             /* Word and header/footer size (bytes) */
+#define DSIZE 8             /* Double word size (bytes) */
+#define CHUNKSIZE (1 << 12) /* Extend heap by this amount (bytes) */
+
+#define MAX(x, y) ((x) > (y) ? (x) : (y))
+
+/* Pack a size and allocated bit into a word */
+#define PACK(size, alloc) ((size) | (alloc))
+
+/* Read and write a word at address p */
+#define GET(p) (*(unsigned int *)(p))
+#define PUT(p, val) (*(unsigned int *)(p) = (val))
+
+/* Read the size and allocated fields from address p */
+#define GET_SIZE(p) (GET(p) & ~0x7)
+#define GET_ALLOC(p) (GET(p) & 0x1)
+
+/* Given block ptr bp, compute address of its header and footer */
+#define HDRP(bp) ((char *)(bp) - WSIZE)
+#define FTRP(bp) ((char *)(bp) + GET_SIZE(HDRP(bp)) - DSIZE)
+
+/* Given block ptr bp, compute address of next and previous blocks */
+#define NEXT_BLKP(bp) ((char *)(bp) + GET_SIZE(((char *)(bp) - WSIZE)))
+#define PREV_BLKP(bp) ((char *)(bp) - GET_SIZE(((char *)(bp) - DSIZE)))
+
+static char *heap_listp;
+
 /*
  * mm_init - initialize the malloc package.
  */
 int mm_init(void)
 {
+    // 힙의 초기 구조를 만들기 위해 mem_sbrk를 호출하여 16바이트만큼 할당한다
+    heap_listp = mem_sbrk((4 * WSIZE));
+    if (heap_listp == (void *)-1)
+    {
+        return NULL;
+    }
+
+    // 16바이트 크기 공간의 초기 포인터는 heap_listp가 된다.
+    // 이제 각 구역을 나누자.
+    PUT(heap_listp, 0);                            // padding
+    PUT(heap_listp + (1 * WSIZE), PACK(DSIZE, 1)); // prologue header
+    PUT(heap_listp + (2 * WSIZE), PACK(DSIZE, 1)); // prologue footer
+    PUT(heap_listp + (4 * WSIZE), PACK(0, 1));     // epilogue header
+
+    // 각 구역을 전부 나누었다면, 힙의 처음 시작 포인터를 설정해주자
+    heap_listp = heap_listp + (2 * WSIZE);
+
+    // 이제 이 힙의 공간에 CHUNKSIZE(4KB 4096 bytes)만큼,
+    // 정확히는 WSIZE(4)로 나눈 1024개의 워드를 allocated block을 한번에 탕!
+    extend_heap(CHUNKSIZE / WSIZE);
+
     return 0;
 }
 
